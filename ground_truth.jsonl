@@ -1,3 +1,8 @@
-{"source": "timeline", "issue": 304865, "canonical": 304866}
-{"source": "timeline", "issue": 298367, "canonical": 304833}
-{"source": "timeline", "issue": 270158, "canonical": 287950}
+{"issue": 321352, "canonical": 319821, "source": "comment"}
+{"issue": 319853, "canonical": 319821, "source": "comment"}
+{"issue": 314060, "canonical": 312691, "source": "comment"}
+{"issue": 304865, "canonical": 304866, "source": "timeline"}
+{"issue": 304248, "canonical": 304220, "source": "comment"}
+{"issue": 298367, "canonical": 304833, "source": "timeline"}
+{"issue": 295152, "canonical": 289711, "source": "comment"}
+{"issue": 270158, "canonical": 287950, "source": "comment+timeline", "conflict": true}
