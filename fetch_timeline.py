@@ -1,6 +1,8 @@
 import json, os, time
 import requests
+from dotenv import load_dotenv
 
+load_dotenv()
 TOKEN = os.environ["GITHUB_TOKEN"]
 OUTPUT = "ground_truth.jsonl"
 GRAPHQL_URL = "https://api.github.com/graphql"

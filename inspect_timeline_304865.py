@@ -1,7 +1,9 @@
 import json, os
 from collections import Counter
 import requests
+from dotenv import load_dotenv
 
+load_dotenv()
 TOKEN = os.environ["GITHUB_TOKEN"]
 NUM = 304865
 OUTFILE = "timeline_304865.json"

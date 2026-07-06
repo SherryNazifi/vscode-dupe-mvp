@@ -2,7 +2,9 @@ import os
 import json
 import time
 import requests
+from dotenv import load_dotenv
 
+load_dotenv()
 TOKEN = os.environ["GITHUB_TOKEN"]
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
