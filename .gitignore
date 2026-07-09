@@ -1,4 +1,5 @@
-echo "*.npz" >> .gitignore
-echo "skipped_issues.json" >> .gitignore
-echo "matched_dupes.json" >> .gitignore
-echo "timeline_304865.json" >> .gitignore
+.env
+*.npz
+skipped_issues.json
+matched_dupes.json
+timeline_304865.json
