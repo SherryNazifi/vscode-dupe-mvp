@@ -8,7 +8,7 @@ client = OpenAI()
 
 MODEL = "gpt-5.4-mini"          # change here if the model id differs
 CAND_FILE = "candidates.jsonl"
-OUT_FILE = "judged.jsonl"
+OUT_FILE = "judged_full.jsonl"
 PROGRESS_EVERY = 25
 
 SYSTEM = (

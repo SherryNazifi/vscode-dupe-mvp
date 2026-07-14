@@ -9,7 +9,8 @@ import json
 
 CONF_MIN = 0.8
 NEAR_EMPTY_CHARS = 25          # non-whitespace chars below this = near-empty
-OUT_FILE = "candidates_filtered.jsonl"
+JUDGED_FILE = "judged_armA.jsonl"
+OUT_FILE = "candidates_filtered_armA.jsonl"
 
 
 def load_docs(path):
@@ -31,7 +32,7 @@ docs1 = load_docs("norm-pile1.jsonl")
 docs2 = load_docs("norm-pile2.jsonl")
 
 yes = []
-with open("judged.jsonl") as f:
+with open(JUDGED_FILE) as f:
     for line in f:
         line = line.strip()
         if line:
