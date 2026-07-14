@@ -103,7 +103,8 @@ with open(OUTPUT, "w") as out:
                 marks[dup_num] = False
 
         # Emit one record per still-marked duplicate
-        still_marked = [dup for dup, active in marks.items() if active]
+        still_marked = [dup for dup, active in marks.items()
+                        if active and dup != canonical_num]   # drop self-references
         if still_marked:
             for dup_num in still_marked:
                 record = {

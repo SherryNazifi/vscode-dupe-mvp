@@ -52,7 +52,7 @@ for idx, issue in enumerate(issues, 1):
     num = issue["number"]
 
     orig = extract(issue.get("body"))
-    if orig:
+    if orig and orig != num:          # ignore self-references (noise)
         matched.append({"issue": num, "original": orig, "source": "body"})
         print(f"[{idx}/{len(issues)}] #{num} body -> #{orig}")
         continue
@@ -67,7 +67,7 @@ for idx, issue in enumerate(issues, 1):
         comments = resp.json()
         for c in comments:
             orig = extract(c.get("body"))
-            if orig:
+            if orig and orig != num:          # ignore self-references (noise)
                 matched.append({"issue": num, "original": orig, "source": "comment"})
                 print(f"[{idx}/{len(issues)}] #{num} comment -> #{orig}")
                 found = True

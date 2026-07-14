@@ -32,7 +32,7 @@ def fetch_issues():
     with open(OUTPUT, "w") as out:
         while collected < CAP:
             params = {
-                "labels": "duplicate",
+                "labels": "*duplicate",
                 "state": "all",
                 "per_page": 100,
                 "sort": "created",
