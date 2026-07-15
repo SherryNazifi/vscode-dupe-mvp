@@ -15,13 +15,9 @@ I tested three retrieval approaches using Recall@5 against 442 known duplicate p
 
 
 | Arm               | Retrieval method                                         |            Recall@5 |
-
 | ----------------- | -------------------------------------------------------- | ------------------: |
-
 | **A: raw text**   | Embed cleaned title and body, then search all of `pile2` | **68.0%** (270/397) |
-
 | **B: canonical**  | Convert each issue into one bug sentence, then embed it  |     61.0% (242/397) |
-
 | **C: clustering** | Search only inside the nearest k-means cluster           |         Best: 55.9% |
 
 
@@ -31,17 +27,11 @@ Clustering results:
 
 
 |   k | A same cluster | A Recall@5 | B same cluster | B Recall@5 |
-
 | --: | -------------: | ---------: | -------------: | ---------: |
-
 |  20 |          61.2% |      49.6% |          58.7% |      44.1% |
-
 |  50 |          59.4% |      54.4% |          52.1% |      44.8% |
-
 | 100 |          57.2% |      53.4% |          52.1% |      46.6% |
-
 | 200 |          58.7% |      55.9% |          46.9% |      43.8% |
-
 | 400 |          56.9% |      55.4% |          48.1% |      46.1% |
 
 
@@ -59,15 +49,10 @@ Example duplicate recommendations:
 
 
 | Pair              | Confidence | Suggested action   | Why                                                         |
-
 | ----------------- | ---------: | ------------------ | ----------------------------------------------------------- |
-
 | #313638 → #313639 |      0.999 | close as duplicate | identical title, description, version, and commit hash      |
-
 | #304056 → #304057 |      0.999 | close as duplicate | identical reproduction steps and symptom                    |
-
 | #294142 → #294141 |      0.999 | close as duplicate | identical issue body about inline suggestions covering code |
-
 | #325093 → #325086 |       0.99 | close as duplicate | same Python `input()` terminal bug                          |
 
 
@@ -95,9 +80,7 @@ The filter also caught a high-confidence failure:
 
 
 | Pair              | Confidence | Why it was flagged                            | Why it was removed                                                             |
-
 | ----------------- | ---------: | --------------------------------------------- | ------------------------------------------------------------------------------ |
-
 | #305541 → #305540 |       0.98 | both bodies contain the same meaningless word | each normalized document contains only one word, so there is no bug to compare |
 
 
@@ -111,23 +94,14 @@ This shows why duplicate filtering needs to consider content quality, not only c
 
 
 | Stage                             |                                   Count |
-
 | --------------------------------- | --------------------------------------: |
-
 | Issues ingested                   | **4,036** (800 `pile1` + 3,236 `pile2`) |
-
 | Ground-truth duplicate pairs      |                 **442** (397 checkable) |
-
 | Candidate pairs (top-5 retrieval) |                               **4,000** |
-
 | LLM-flagged duplicates            |                                 **860** |
-
 | Candidates after filtering        |                                 **774** |
-
 | Best retrieval Recall@5           |                               **68.0%** |
-
 | Earlier human-review agreement    |                         **78% overall** |
-
 | Earlier high-confidence agreement |                         **94%** (16/17) |
 
 
