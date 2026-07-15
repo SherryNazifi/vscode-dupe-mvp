@@ -19,6 +19,7 @@ I tested three retrieval approaches using Recall@5 against 442 known duplicate p
 | **A: raw text**   | Embed cleaned title and body, then search all of `pile2` | **68.0%** (270/397) |
 | **B: canonical**  | Convert each issue into one bug sentence, then embed it  |     61.0% (242/397) |
 | **C: clustering** | Search only inside the nearest k-means cluster           |         Best: 55.9% |
+| **D: canonical + clustering** | Canonical sentences, searched inside the nearest cluster |         Best: 46.6% |
 
 
 
