@@ -12,6 +12,18 @@ An agent that reads a GitHub issue, searches over 3,000 others, and identifies i
 
 I tested three retrieval approaches using Recall@5 against 442 known duplicate pairs. Of those, 397 were checkable because the duplicate was in `pile1` and its canonical issue was in `pile2`.
 
+* The canonicalization prompt explicitly told the model to discard error strings.
+  That likely contributed to Arm B's lower recall by removing some of the most
+  useful matching signals. The prompt was:
+
+    "Given the github issue which is title + body find the underlying bug and 
+    state it one plain sentence that should have the problem and if 
+    identifiable the cause. Do not mention any formatting, code blocks, stack 
+    traces, error-message syntax, version numbers, OS, and the language the 
+    report was written in. So that different reports of the same underlying 
+    bug should produce almost the same statement no matter how their original 
+    repost looks like. The output should one be one sentence."
+
 
 
 | Arm               | Retrieval method                                         |            Recall@5 |
