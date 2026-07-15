@@ -1,115 +1,277 @@
 # vscode-dupe-mvp
 
-An agent reads a GitHub issue, searches 3,000 others on its own, and decides which ones are the same underlying bug.
+
+
+An agent that reads a GitHub issue, searches over 3,000 others, and identifies issues describing the same underlying bug.
+
+
+
+## The experiment
+
+
+
+I tested three retrieval approaches using Recall@5 against 442 known duplicate pairs. Of those, 397 were checkable because the duplicate was in `pile1` and its canonical issue was in `pile2`.
+
+
+
+| Arm               | Retrieval method                                         |            Recall@5 |
+
+| ----------------- | -------------------------------------------------------- | ------------------: |
+
+| **A: raw text**   | Embed cleaned title and body, then search all of `pile2` | **68.0%** (270/397) |
+
+| **B: canonical**  | Convert each issue into one bug sentence, then embed it  |     61.0% (242/397) |
+
+| **C: clustering** | Search only inside the nearest k-means cluster           |         Best: 55.9% |
+
+
+
+Clustering results:
+
+
+
+|   k | A same cluster | A Recall@5 | B same cluster | B Recall@5 |
+
+| --: | -------------: | ---------: | -------------: | ---------: |
+
+|  20 |          61.2% |      49.6% |          58.7% |      44.1% |
+
+|  50 |          59.4% |      54.4% |          52.1% |      44.8% |
+
+| 100 |          57.2% |      53.4% |          52.1% |      46.6% |
+
+| 200 |          58.7% |      55.9% |          46.9% |      43.8% |
+
+| 400 |          56.9% |      55.4% |          48.1% |      46.1% |
+
+
+
+Raw normalized text performed best. Canonicalization removed useful details such as component names and error strings. Clustering also reduced recall because many true duplicate pairs were assigned to different clusters.
+
+
 
 ## What it produced
 
-Real duplicate suggestions after the run. Each is a pile1 issue paired
-with a pile2 issue the agent found on its own, with the model's confidence,
-evidence, and suggested action:
 
-| Pair | Confidence | Suggested action | Why |
-|---|---|---|---|
-| #303674 → #319783 | 0.97 | close as duplicate | identical error: "Chat took too long to get ready…" |
-| #303281 → #322364 | 0.96 | close as duplicate | same exception "RangeError: Invalid string length"; B adds the chat-session serialization stack trace |
-| #303450 → #322381 | 0.91 | close as duplicate | identical core error "Server error. Stream terminated" |
-| #304531 → #323830 | 0.99 | close as duplicate | identical "Language model unavailable" with no differing detail |
 
-Every one of the 533 flagged pairs has this same shape, with fields: verdict,
-confidence (0–1), evidence, suggested action in `judged.jsonl`. The 437 that
-survive filtering are in `candidates_filtered.jsonl`.
+Example duplicate recommendations:
 
-Note: I marked #303281 → #322364 as "no" during review — B has long reasoning of the cause, A is just the error string repeated. It is the only high-confidence pair I disagreed with while the model is arguably right.
 
-And one of the issues that it got wrong was caught by the filter applied after the confidence treshold:
 
-| Pair | Confidence | Why it's flagged | Why it's dropped |
-|---|---|---|---|
-| #304494 → #322709 | **0.99** | both issue bodies are just the word "error" — one in English, one in Vietnamese ("Lỗi") | after normalization each document is a single word; there's no bug to compare |
+| Pair              | Confidence | Suggested action   | Why                                                         |
 
-This is the case for filtering on *content*, not just confidence. The model was
-99% sure because the two documents were near-identical — but they were
-near-identical because both were empty. Confidence is calibrated conditional on
-there being something to judge, but when both documents are one word, the score
-measures textual similarity instead of judging by the bug similarity.
+| ----------------- | ---------: | ------------------ | ----------------------------------------------------------- |
+
+| #313638 → #313639 |      0.999 | close as duplicate | identical title, description, version, and commit hash      |
+
+| #304056 → #304057 |      0.999 | close as duplicate | identical reproduction steps and symptom                    |
+
+| #294142 → #294141 |      0.999 | close as duplicate | identical issue body about inline suggestions covering code |
+
+| #325093 → #325086 |       0.99 | close as duplicate | same Python `input()` terminal bug                          |
+
+
+
+Each prediction contains:
+
+
+
+* verdict
+
+* confidence
+
+* evidence
+
+* suggested action
+
+
+
+stored in `judged_armA.jsonl`.
+
+
+
+The filter also caught a high-confidence failure:
+
+
+
+| Pair              | Confidence | Why it was flagged                            | Why it was removed                                                             |
+
+| ----------------- | ---------: | --------------------------------------------- | ------------------------------------------------------------------------------ |
+
+| #305541 → #305540 |       0.98 | both bodies contain the same meaningless word | each normalized document contains only one word, so there is no bug to compare |
+
+
+
+This shows why duplicate filtering needs to consider content quality, not only confidence.
+
+
 
 ## The numbers
 
-| Stage | Count |
-|---|---|
-| Issues ingested | **3,362** (358 duplicate-labeled `pile1` + 3,004 recent non-PR `pile2`) |
-| Candidate pairs (top-5 embedding retrieval) | **1,790** |
-| Flagged as duplicates by the LLM judge | **533** |
-| Hand-judged by me across confidence bands | **40** |
-| Agreement with the model — overall | **78%** |
-| Agreement — high-confidence (≥0.8) verdicts | **94% (16/17)** |
-| Survivors after filtering low-confidence + near-empty | **437** |
 
-The 40 hand-judged pairs that contains my verdicts and notes next to the model's are
-in `review.jsonl`. That's the file to open to see where human and model agreed
-and where they didn't.
+
+| Stage                             |                                   Count |
+
+| --------------------------------- | --------------------------------------: |
+
+| Issues ingested                   | **4,036** (800 `pile1` + 3,236 `pile2`) |
+
+| Ground-truth duplicate pairs      |                 **442** (397 checkable) |
+
+| Candidate pairs (top-5 retrieval) |                               **4,000** |
+
+| LLM-flagged duplicates            |                                 **860** |
+
+| Candidates after filtering        |                                 **774** |
+
+| Best retrieval Recall@5           |                               **68.0%** |
+
+| Earlier human-review agreement    |                         **78% overall** |
+
+| Earlier high-confidence agreement |                         **94%** (16/17) |
+
+
+
+The 40 manually reviewed pairs from the earlier 358-issue run are stored in `review.jsonl`.
+
+
 
 ## What it does
 
-It reads an issue from `microsoft/vscode`, then goes looking for its duplicates
-without being told where to look. It embeds every candidate issue, retrieves the
-handful that are semantically closest, and gives each of those pairs to an LLM
-that judges whether they describe the *same underlying bug* and not just the same
-feature area. Every judgment comes back as a verdict (yes/no), a confidence
-score, the evidence it used, and a suggested action (close as duplicate, keep
-separate, needs human review). Used embeddings to make it cheap to search the large space so that the LLM does the reasoning only on the promising candidates
+
+
+The system embeds every issue, retrieves the five most similar candidates, and asks an LLM whether each pair describes the same underlying bug rather than merely belonging to the same feature area.
+
+
+
+Using embeddings first reduces the search from roughly 2.6 million possible comparisons to just 4,000 LLM evaluations.
+
+
 
 ## Pipeline
 
-1. `fetch_dupes.py` — pulls every `duplicate`-labeled issue from vscode →
-   `pile1.jsonl` (358 issues, PRs skipped).
-2. `find_dupe_refs.py` — scrapes issue bodies + comments for "duplicate of #N"
-   / `/duplicate` references. Found 6 canonical issues.
-3. `fetch_timeline.py` — queries GitHub's GraphQL API to recover machine-recorded duplicate events and builds the ground-truth dataset. Found 3.
-   Merged with the comment refs → **8-pair `ground_truth.jsonl`** (6 + 3 = 9,
-   minus one pair found by both methods).
-4. `fetch_pile2.py` — builds the candidate pool: every canonical from ground
-   truth + 3,000 recent general issues.
-5. `normalize.py` — removed HTML comments, `<details>` blocks, code fences,
-   version/environment boilerplate. Builds `document = title + cleaned body`;
-   keeps title-only if the body is empty. → `norm-pile1/2.jsonl`.
-6. `embed.py` — embeds all 3,362 documents with OpenAI `text-embedding-3-small`
-   (batched), traceable by issue number + pile tag → `embeddings.npz`.
-7. `similarity.py` — cosine similarity, top-5 pile2 neighbors per pile1 issue →
-   `candidates.jsonl` (1,790 pairs).
-8. `judge.py` — one `gpt-5.4-mini` call per pair, JSON output
-   (verdict / confident / evidence / suggested_action), resumable →
-   `judged.jsonl`.
-9. `make_review.py` — gets 40-pair sample across confidence bands for
-   human review → `review.jsonl`.
-10. `filter_candidates.py` — drops pairs below 0.8 confidence or with a near-empty document
-    (<25 non-whitespace chars) → `candidates_filtered.jsonl` (533 → 437).
+
+
+The production path is **Arm A (raw normalized text)**. Arms B and C are retrieval experiments that branch after embedding and were evaluated separately.
+
+
+
+1. `fetch_dupes.py` pulls `*duplicate`-labeled issues into `pile1.jsonl` (800 issues).
+
+2. `find_dupe_refs.py` scrapes issue bodies and comments for duplicate references. `fetch_timeline.py` retrieves structured duplicate events through GitHub GraphQL, and `merge_ground_truth.py` merges both sources, removes duplicates and self-references, and produces `ground_truth.jsonl` (442 pairs, 397 checkable).
+
+3. `fetch_pile2.py` builds the search corpus from canonical issues plus 3,000 recent non-PR issues, producing `pile2.jsonl` (3,236 issues).
+
+4. `normalize.py` removes template boilerplate and builds `document = title + cleaned body`.
+
+5. `embed.py` embeds all 4,036 normalized documents using `text-embedding-3-small`.
+
+6. `similarity.py` computes cosine similarity and retrieves the top five `pile2` neighbors for every `pile1` issue, producing 4,000 candidate pairs.
+
+7. `judge.py` evaluates each pair with `gpt-5.4-mini`, returning a verdict, confidence, evidence, and suggested action. It flags 860 pairs as duplicates.
+
+8. `make_review.py` creates a 40-pair stratified sample for manual evaluation.
+
+9. `filter_candidates.py` removes predictions below 0.8 confidence and near-empty documents, leaving 774 recommendations.
+
+
+
+Retrieval experiments branch after embedding:
+
+
+
+* **Arm B:** `canonicalize.py` → `embed_armB.py` → `similarity_armB.py`
+
+* **Arm C:** `cluster_recall.py` → `cluster_recall_armB.py`
+
+
+
+Neither experimental arm was used in the final pipeline because both achieved lower Recall@5 than Arm A.
+
 
 
 ## Key decisions
 
-- **Retrieve and then judge** Comparing all 358 × 3,004 possible issue pairs would require about 1 million comparisons. Instead, embeddings narrow the search to just 1,790 candidate pairs before the LLM is called, which reduces the cost.
-- **Graded against my own judgment** GitHub duplicate labels turned out to be noisy. Several maintainer-labeled duplicates described similar symptoms but different underlying bugs.
-Rather than treating GitHub labels as ground truth, I manually reviewed a stratified sample and compared the model against the actual question that is "Are these describing the same underlying bug?"
-- **Confidence threshold not tuned after the result** The confidence threshold (0.8) and prompt were fixed before evaluation and never adjusted afterward to avoid overfitting to the review sample.
+
+
+### Retrieve, then judge
+
+
+
+A brute-force comparison would require roughly 800 × 3,236 ≈ 2.6 million issue pairs. Embeddings narrow the search to the five most promising candidates before the LLM performs the semantic reasoning.
+
+
+
+### Evaluate the intended task
+
+
+
+GitHub duplicate labels often connect issues with similar symptoms but different underlying bugs. Instead of treating those labels as ground truth, I manually reviewed a stratified sample using the narrower question:
+
+
+
+> Do these issues describe the same underlying bug?
+
+
+
+### Fix the evaluation before running it
+
+
+
+The prompt and 0.8 confidence threshold were fixed before evaluation and were not adjusted afterward.
+
+
+
+### Filter weak content
+
+
+
+Pairs with fewer than 25 non-whitespace characters are removed because high textual similarity is not meaningful when neither issue contains enough information.
+
 
 
 ## What I found
 
-- Model confidence is well calibrated when these is enough content to judge. Human-model agreement tracks the
-  confidence band almost monotonically: 94% high, 81% medium, 29% low. 
-- GitHub's definition of "duplicate" is often broader than "same underlying bug." The model consistently applied the narrower definition.
+
+
+* Raw normalized text produced the strongest retrieval recall.
+
+* Canonicalization removed details that embeddings used effectively.
+
+* Clustering reduced recall before ranking even started.
+
+* In the earlier 358-issue run, human agreement increased with confidence: 94% for high-confidence predictions, 81% for medium-confidence predictions, and 29% for low-confidence predictions.
+
+* GitHub often uses a broader duplicate definition than the model.
+
+
 
 ## Limitations
 
-- Accidentally filtered using the duplicate label instead of VS Code's broader *duplicate maintainer label, so the evaluation only covers a small slice of duplicate issues.
-- High-confidence evaluation is based on only 17 examples.
-- Ground truth contains only 8 canonical duplicate pairs.
-- Text normalization is specific to the VS Code issue template.
-- Runs manually; no scheduled pipeline.
-- Produces recommendations only. A human still decides whether to close issues.
+
+
+* The 94% high-confidence agreement result comes from the earlier 358-issue run and is based on only 17 examples.
+
+* Manual evaluation has not yet been repeated on the current 800-issue dataset.
+
+* The 442 ground-truth pairs represent only a subset of VS Code duplicates.
+
+* The canonicalization prompt explicitly instructed the model to discard error strings, which likely contributed to Arm B's lower recall by removing useful retrieval signals.
+
+* Text normalization is tailored to the VS Code issue template.
+
+* The pipeline currently runs manually.
+
+* The system produces recommendations only. A human still decides whether to close issues.
+
+
 
 ## What I'd do next
 
-1. Evaluate on richer customer support conversations instead of GitHub issues.
-2. Support two modes: exact same bug, same root cause
+
+
+2. Support multiple matching modes, including exact same bug and same root cause.
+
+3. Repeat the manual evaluation on the current dataset.
+
+4. Explore hybrid retrieval that combines embeddings with lexical signals such as error strings.
