@@ -83,7 +83,7 @@ The judge output is filtered using two rules:
 1. Remove pairs with confidence below 0.8.
 2. Remove pairs where either document contains fewer than 25 non-whitespace characters.
 
-These rules handle different failure modes. The confidence threshold removes pairs where the model itself is uncertain. The document-length filter removes pairs where the model sounds confident despite having almost no evidence — for example, issue #305541 was matched with #305540 at 0.98 confidence because both normalized documents contained the same single meaningless word. A confidence filter alone would not catch that; the system also needs to check whether the documents contain enough information to support the decision.
+These rules handle different failure modes. The confidence threshold removes pairs where the model itself is uncertain. The document-length filter removes pairs where the model sounds confident despite having almost no evidence. For example, issue #305541 was matched with #305540 at 0.98 confidence because both normalized documents contained the same single meaningless word. A confidence filter alone would not catch that; the system also needs to check whether the documents contain enough information to support the decision.
 
 → **774 recommendations.**
 
@@ -91,7 +91,7 @@ The system only recommends duplicates. A human still makes the final decision ab
 
 ## Does it work?
 
-The retrieval stage is evaluated using Recall@5 against the 397 checkable ground-truth pairs. Recall@5 asks: for each known duplicate, did its actual canonical issue appear anywhere in the five candidates the system retrieved? This evaluates retrieval separately from the LLM judge — if the correct canonical issue never enters the top five, the judge never gets a chance to identify it.
+The retrieval stage is evaluated using Recall@5 against the 397 checkable ground-truth pairs. Recall@5 asks: for each known duplicate, did its actual canonical issue appear anywhere in the five candidates the system retrieved? This evaluates retrieval separately from the LLM judge. If the correct canonical issue never enters the top five, the judge never gets a chance to identify it.
 
 | Arm | Retrieval method | Recall@5 |
 | --- | --- | ---: |
@@ -120,7 +120,7 @@ Arm C used k-means clustering over all 4,036 embedding vectors, with the random 
 | 200 | 58.7% | **55.9%** |
 | 400 | 56.9% | 55.4% |
 
-Across the different values of k, only around 60% of true duplicate pairs landed in the same cluster at all. That means around 40% of the correct answers became impossible to retrieve before similarity ranking even started — clustering introduces a hard ceiling on recall. An approximate nearest-neighbor index such as HNSW might avoid this, since it does not partition issues into disjoint clusters, so an issue can still be compared even when it sits on a cluster boundary. Partitioning the dataset into hard clusters removed too many valid candidates.
+Across the different values of k, only around 60% of true duplicate pairs landed in the same cluster at all. That means around 40% of the correct answers became impossible to retrieve before similarity ranking even started. Clustering introduces a hard ceiling on recall. An approximate nearest-neighbor index such as HNSW might avoid this, since it does not partition issues into disjoint clusters, so an issue can still be compared even when it sits on a cluster boundary. Partitioning the dataset into hard clusters removed too many valid candidates.
 
 ### Arm D: canonical + clustering
 
@@ -158,7 +158,7 @@ Agreement tracks confidence. When the model was sure it was almost always right,
 
 **Every disagreement went the same direction.** The model said yes, the human said no. There were no cases in this sample where the human identified a duplicate that the model had rejected. The judge's main failure mode is therefore over-matching rather than missing duplicates.
 
-**The two high-confidence misses have the same shape:** one issue is detailed, the other is vague, and the model fills in what the vague one probably means. #5 (confidence 0.91) matched "REMOVE THIS PLEASE" against "STOP THE AI SUGGESTIONS PLEASE" — only one of them mentions AI. #20 (0.91) matched a real, specific bug against a bare template, matching on the detailed side alone. The model infers intent from the rich side and glosses over the underspecified one.
+**The two high-confidence misses have the same shape:** one issue is detailed, the other is vague, and the model fills in what the vague one probably means. #5 (confidence 0.91) matched "REMOVE THIS PLEASE" against "STOP THE AI SUGGESTIONS PLEASE." Only one of them mentions AI. #20 (0.91) matched a real, specific bug against a bare template, matching on the detailed side alone. The model infers intent from the rich side and glosses over the underspecified one.
 
 **The rest are the familiar absence-of-evidence gap.** The entire low band (#7, #10, #36) is blank issue templates, and the model's own evidence field admits it: "effectively empty placeholders, no concrete evidence," correctly hedged at 0.08 to 0.14 confidence.
 
@@ -168,7 +168,7 @@ Agreement tracks confidence. When the model was sure it was almost always right,
 
 **Retrieve, then judge.** Embeddings are cheap and approximate, LLM calls are expensive and precise. Spend the cheap one on 2.6 million and the expensive one on 4,000.
 
-**Do not trust the label as ground truth.** GitHub's `*duplicate` often links issues with similar symptoms and different root causes. So the judge was asked the narrower question — same underlying bug — and a stratified sample was hand-labeled to see whether the model's answer matched a human's.
+**Do not trust the label as ground truth.** GitHub's `*duplicate` often links issues with similar symptoms and different root causes. So the judge was asked the narrower question (same underlying bug), and a stratified sample was hand-labeled to see whether the model's answer matched a human's.
 
 **Fix the evaluation before running it.** The prompt and the 0.8 threshold were set before any results were seen and were not tuned afterward. The 92% high-band agreement is a result of that threshold, not a justification found for it later.
 
