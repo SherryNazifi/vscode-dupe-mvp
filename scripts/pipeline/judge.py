@@ -1,3 +1,9 @@
+# --- resolve data/ paths relative to repo root ---
+import os as _os
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while not _os.path.isdir(_os.path.join(_root, "data")) and _root != _os.path.dirname(_root):
+    _root = _os.path.dirname(_root)
+_os.chdir(_os.path.join(_root, "data"))
 import os, json, time
 from openai import OpenAI
 from openai import RateLimitError, APIError, APITimeoutError, APIConnectionError
@@ -7,8 +13,8 @@ load_dotenv()
 client = OpenAI()
 
 MODEL = "gpt-5.4-mini"          # change here if the model id differs
-CAND_FILE = "candidates.jsonl"
-OUT_FILE = "judged_full.jsonl"
+CAND_FILE = "candidates_armA.jsonl"
+OUT_FILE = "judged_armA.jsonl"
 PROGRESS_EVERY = 25
 
 SYSTEM = (

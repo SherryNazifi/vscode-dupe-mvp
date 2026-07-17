@@ -1,3 +1,9 @@
+# --- resolve data/ paths relative to repo root ---
+import os as _os
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while not _os.path.isdir(_os.path.join(_root, "data")) and _root != _os.path.dirname(_root):
+    _root = _os.path.dirname(_root)
+_os.chdir(_os.path.join(_root, "data"))
 import json
 import numpy as np
 

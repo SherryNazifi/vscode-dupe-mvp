@@ -1,3 +1,9 @@
+# --- resolve data/ paths relative to repo root ---
+import os as _os
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while not _os.path.isdir(_os.path.join(_root, "data")) and _root != _os.path.dirname(_root):
+    _root = _os.path.dirname(_root)
+_os.chdir(_os.path.join(_root, "data"))
 import os, json
 import numpy as np
 import tiktoken
@@ -9,7 +15,7 @@ load_dotenv()
 MODEL = "text-embedding-3-small"
 BATCH_SIZE = 500                 # inputs per request -> few requests total
 MAX_TOKENS = 8000                # safely under the model's 8192-token hard limit
-OUTFILE = "embeddings.npz"
+OUTFILE = "embeddings_armA.npz"
 
 # Reads OPENAI_API_KEY from the environment automatically
 client = OpenAI()

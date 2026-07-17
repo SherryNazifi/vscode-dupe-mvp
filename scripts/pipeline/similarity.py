@@ -1,8 +1,14 @@
+# --- resolve data/ paths relative to repo root ---
+import os as _os
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while not _os.path.isdir(_os.path.join(_root, "data")) and _root != _os.path.dirname(_root):
+    _root = _os.path.dirname(_root)
+_os.chdir(_os.path.join(_root, "data"))
 import json
 import numpy as np
 
 TOP_K = 5
-d = np.load("embeddings.npz", allow_pickle=True)
+d = np.load("embeddings_armA.npz", allow_pickle=True)
 emb    = d["embeddings"].astype(np.float32)
 nums   = d["numbers"]
 piles  = d["piles"]
@@ -31,7 +37,7 @@ order = np.argsort(-part_scores, axis=1)
 top_idx = idx_part[rows, order]        # (358, k) column indices into pile2
 
 pairs = 0
-with open("candidates.jsonl", "w") as out:
+with open("candidates_armA.jsonl", "w") as out:
     for i in range(sims.shape[0]):
         for j in top_idx[i]:
             record = {
@@ -42,4 +48,4 @@ with open("candidates.jsonl", "w") as out:
             out.write(json.dumps(record) + "\n")
             pairs += 1
 
-print(f"Total candidate pairs written: {pairs}  -> candidates.jsonl")
+print(f"Total candidate pairs written: {pairs}  -> candidates_armA.jsonl")

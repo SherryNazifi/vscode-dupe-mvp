@@ -1,3 +1,9 @@
+# --- resolve data/ paths relative to repo root ---
+import os as _os
+_root = _os.path.dirname(_os.path.abspath(__file__))
+while not _os.path.isdir(_os.path.join(_root, "data")) and _root != _os.path.dirname(_root):
+    _root = _os.path.dirname(_root)
+_os.chdir(_os.path.join(_root, "data"))
 import json
 import numpy as np
 from sklearn.cluster import KMeans
@@ -6,7 +12,7 @@ SEED = 42
 KS = [20, 50, 100, 200, 400]
 
 # --- load arm A embeddings ---
-d = np.load("embeddings_armB.npz", allow_pickle=True)
+d = np.load("embeddings_armA.npz", allow_pickle=True)
 emb   = d["embeddings"].astype(np.float32)
 nums  = d["numbers"]
 piles = d["piles"]
