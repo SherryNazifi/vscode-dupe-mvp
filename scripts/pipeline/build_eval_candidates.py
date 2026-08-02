@@ -15,12 +15,13 @@ while not _os.path.isdir(_os.path.join(_root, "data")) and _root != _os.path.dir
     _root = _os.path.dirname(_root)
 _os.chdir(_os.path.join(_root, "data"))
 
-import os, json, re, time, random
+import os, json, time, random
 import numpy as np
 import requests
 import tiktoken
 from openai import OpenAI
 from dotenv import load_dotenv
+from normalize_core import make_document
 
 load_dotenv()
 random.seed(42)
@@ -35,42 +36,10 @@ TOP_N           = 20
 EMBED_MODEL     = "text-embedding-3-small"
 MAX_TOKENS      = 8000
 
-CAT1_RAW  = "_eval_cat1_raw.jsonl"     # cached fetched issues
+CAT1_RAW  = "_eval_cat1_raw.jsonl"     # cached fetched issues (raw)
+CAT1_NORM = "norm-eval-cat1.jsonl"     # normalized cat-1 docs (like norm-pile*.jsonl)
 CAT1_EMB  = "_eval_cat1_emb.npz"       # cached embeddings for cat-1 issues
 OUTFILE   = "evaluation-candidates.jsonl"
-
-# --- normalization (mirrors scripts/pipeline/normalize.py) -------------------
-RE_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
-RE_DETAILS      = re.compile(r"<details\b.*?</details>", re.DOTALL | re.IGNORECASE)
-RE_CODE_FENCE   = re.compile(r"```.*?```", re.DOTALL)
-RE_HTML_TAG     = re.compile(r"<[^>]+>")
-RE_IMG_MD       = re.compile(r"!\[[^\]]*\]\([^)]*\)")
-VERSION_LINE_PATTERNS = [
-    r"type:\s*bug", r"type:\s*feature", r"type:\s*performance", r"extension version:",
-    r"vs\s*code version:", r"vscode version:", r"os version:", r"modes:",
-    r"^version:", r"^commit:", r"^date:", r"^electron:", r"^chromium:", r"^node\.?js:",
-    r"^v8:", r"^sandboxed:", r"^remote:", r"^os:", r"^cpus:", r"^memory:",
-    r"does this issue occur when all extensions are disabled", r"steps to reproduce:?$",
-]
-RE_VERSION_LINE = re.compile(r"^\s*(?:" + "|".join(VERSION_LINE_PATTERNS) + r").*$",
-                             re.IGNORECASE | re.MULTILINE)
-NEAR_EMPTY_THRESHOLD = 10
-
-def clean_body(body):
-    if not body:
-        return ""
-    t = body
-    t = RE_HTML_COMMENT.sub("", t); t = RE_DETAILS.sub("", t); t = RE_CODE_FENCE.sub("", t)
-    t = RE_IMG_MD.sub("", t); t = RE_HTML_TAG.sub("", t); t = RE_VERSION_LINE.sub("", t)
-    t = re.sub(r"[ \t]+", " ", t); t = re.sub(r"\n{3,}", "\n\n", t)
-    return t.strip()
-
-def make_document(title, body):
-    title = (title or "").strip()
-    cleaned = clean_body(body)
-    if len(cleaned.replace(" ", "").replace("\n", "")) < NEAR_EMPTY_THRESHOLD:
-        return title
-    return f"{title}\n\n{cleaned}" if title else cleaned
 
 # --- load pile embeddings ----------------------------------------------------
 d = np.load("embeddings_armA.npz", allow_pickle=True)
@@ -173,6 +142,17 @@ if not _os.path.exists(CAT1_RAW):
 
 cat1 = [json.loads(l) for l in open(CAT1_RAW) if l.strip()]
 
+# normalize cat-1 to a persisted file, same {number, title, document} schema as
+# norm-pile*.jsonl — this is the exact text that gets embedded and later judged.
+with open(CAT1_NORM, "w") as f:
+    for r in cat1:
+        title = (r.get("title") or "").strip()
+        document = make_document(r["title"], r["body"]) or f"issue {r['number']}"
+        f.write(json.dumps({"number": r["number"], "title": title,
+                            "document": document}, ensure_ascii=False) + "\n")
+print(f"normalized cat-1 -> {CAT1_NORM}")
+cat1_docs = [json.loads(l) for l in open(CAT1_NORM) if l.strip()]
+
 # embed cat-1 documents (cached)
 ENC = tiktoken.get_encoding("cl100k_base")
 def truncate(text):
@@ -184,10 +164,7 @@ if _os.path.exists(CAT1_EMB):
 else:
     print("\n=== CAT1: embedding 200 issues via OpenAI ===")
     client = OpenAI()
-    docs = []
-    for r in cat1:
-        doc = make_document(r["title"], r["body"]) or f"issue {r['number']}"
-        docs.append(truncate(doc))
+    docs = [truncate(r["document"]) for r in cat1_docs]
     resp = client.embeddings.create(model=EMBED_MODEL, input=docs)
     cat1_vecs = np.array([e.embedding for e in resp.data], dtype=np.float32)
     np.savez(CAT1_EMB, embeddings=cat1_vecs)
