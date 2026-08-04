@@ -1,43 +1,27 @@
 # vscode-dupe-mvp
 
-An agent that reads a GitHub issue from the `microsoft/vscode` repo, searches over 3,000 others, and identifies the ones describing the same underlying bug.
+An agent that reads a GitHub issue from the `microsoft/vscode` repository, searches thousands of existing issues, and recommends whether one describes the same underlying bug.
 
-## The problem
+## Why this is hard
 
-Duplicate issues rarely share wording. Two people hitting the same bug write "Copilot chat is not responding" and "requests fail silently after submit." Basic keyword matching can easily miss that these describe the same issue.
+Duplicate reports often use different wording. One user may write “Copilot chat is not responding,” while another writes “requests fail silently after submit.” Keyword matching can miss these relationships, while a language model cannot economically compare every new issue against the entire repository.
 
-Comparing every duplicate against every candidate is 800 × 3,236 = 2.6 million pairs, and sending all of them to an LLM is expensive. Instead, the pipeline retrieves first and judges second:
+The system therefore separates the problem into two stages:
 
-1. Embeddings reduce the 2.6 million possible pairs to 4,000 likely candidates.
-2. Only those 4,000 pairs are sent to the language model for a final decision.
+```text
+new issue
+→ retrieve a small candidate list
+→ judge whether any candidate is the same underlying bug
+→ recommend one canonical issue or abstain
+```
 
-## Data
+The system only recommends duplicates. A human still decides whether to close an issue.
 
-The dataset is split into two piles pulled from the VS Code repository.
+## Current architecture
 
-| Pile | Contents | Count |
-| --- | --- | ---: |
-| `pile1` | issues labeled `*duplicate` | 800 |
-| `pile2` | the canonical issues those point to, plus 3,000 recent non-PR issues | 3,236 |
+### 1. Ingest and normalize
 
-Ground truth came from two separate sources:
-
-1. **Comment and body scraping** (`find_dupe_refs.py`) searches the body and comments of every pile1 issue for references such as `Duplicate of #12345`. This method found 427 duplicate-to-canonical pairs.
-2. **GraphQL `MarkedAsDuplicateEvent`** (`fetch_timeline.py`) is the structured event GitHub records when a maintainer marks a duplicate. This method found 57 pairs.
-
-`merge_ground_truth.py` merges them, deduplicates by *unordered* pair so the two sources do not double-count the same link, drops self-references, and lets the timeline win when the two disagree on direction. A structured GitHub event is more trustworthy than a regex on comment text.
-
-Result: **442 pairs**, of which **397 are checkable**, meaning the duplicate is in `pile1` and its canonical is in `pile2`.
-
-> One important mistake in an earlier version was filtering for the label `duplicate` instead of `*duplicate`. The `duplicate` label is barely used and returned only 358 issues. The actual VS Code triage label is `*duplicate`, which has more than 29,000 issues. That one-character difference changed the ground truth from 8 usable pairs to 442.
-
-## Pipeline
-
-Arm A is the main production pipeline.
-
-**1. Normalize** (`normalize.py`)
-
-Removes issue-template content that is usually not helpful for finding duplicates: HTML comments, `<details>` blocks, fenced code, images, and version and OS lines. The output format is:
+Issues are fetched from GitHub and normalized into:
 
 ```json
 {
@@ -47,143 +31,151 @@ Removes issue-template content that is usually not helpful for finding duplicate
 }
 ```
 
-The searchable document is `document = title + cleaned body`. When normalization removes the entire body, the issue is not dropped; its title is kept as the document instead.
+The normalizer removes template noise such as HTML comments, `<details>` blocks, images, fenced code, version lines, and OS lines. If the body becomes empty, the title is retained.
 
-**2. Embed** (`embed.py`)
+This normalization is useful but imperfect. It can also remove distinctive evidence such as stack traces, error strings, commands, and screenshot-only reports.
 
-All 4,036 documents are embedded with `text-embedding-3-small`, batched 500 at a time and truncated to 8,000 tokens. Both piles are stored inside one `.npz` file with a tag identifying whether each vector belongs to `pile1` or `pile2`, so the issues do not need to be embedded again every time retrieval is rerun.
+### 2. Embed
 
-**3. Retrieve** (`similarity.py`)
+All pile1 and pile2 documents are embedded with `text-embedding-3-small` and stored in one `.npz` file.
 
-The vectors are first L2-normalized. The pipeline then computes cosine similarity with one matrix multiplication (`v1 @ v2.T`), giving all 2.6 million similarities between `pile1` and `pile2`. For each pile1 issue, the system keeps the five most similar issues from pile2 (800 × 5 = 4,000 pairs).
+### 3. Retrieve
 
-→ **4,000 candidate pairs.**
+Cosine similarity ranks pile2 issues for each pile1 issue. The current judge baseline uses the top five candidates.
 
-**4. Judge** (`judge.py`)
+### 4. Judge
 
-Each candidate pair is sent to `gpt-5.4-mini` in JSON mode. The model is asked one question: are these issues describing the same underlying bug, or are they only related to the same feature area? For every pair it returns:
+The current judge receives one query issue and its candidate list at once. It returns:
 
 ```json
 {
-  "verdict": true,
-  "confident": 0.94,
-  "evidence": "Explanation of the shared bug",
-  "suggested_action": "close as duplicate"
+  "verdict": "duplicate",
+  "picked_canonical": 12345,
+  "confidence": 0.89,
+  "evidence": "Why this candidate describes the same underlying bug"
 }
 ```
 
-The script is resumable, so if the run crashes halfway through, it continues without paying again for the pairs that were already processed.
+Allowed verdicts:
 
-→ **860 flagged as duplicates.**
+- `duplicate`
+- `none`
+- `insufficient_information`
 
-**5. Filter** (`filter_candidates.py`)
+## Data
 
-The judge output is filtered using two rules:
+| Pile | Contents | Count |
+|---|---|---:|
+| `pile1` | issues labeled `*duplicate` | 800 |
+| `pile2` | linked canonicals plus 3,000 recent non-PR issues | 3,236 |
 
-1. Remove pairs with confidence below 0.8.
-2. Remove pairs where either document contains fewer than 25 non-whitespace characters.
+Ground truth came from:
 
-These rules handle different failure modes. The confidence threshold removes pairs where the model itself is uncertain. The document-length filter removes pairs where the model sounds confident despite having almost no evidence. For example, issue #305541 was matched with #305540 at 0.98 confidence because both normalized documents contained the same single meaningless word. A confidence filter alone would not catch that; the system also needs to check whether the documents contain enough information to support the decision.
+- comment and body references such as `Duplicate of #12345`
+- GitHub GraphQL `MarkedAsDuplicateEvent` records
 
-→ **774 recommendations.**
+After merging and cleaning:
 
-The system only recommends duplicates. A human still makes the final decision about closing an issue.
+```text
+442 recovered links
+397 checkable pairs
+```
 
-## Does it work?
+A later manual audit found that 55 of the 397 links did not represent the same underlying bug. They included area-level links, catch-all tracking issues, testing links, and reports too vague to confirm.
 
-The retrieval stage is evaluated using Recall@5 against the 397 checkable ground-truth pairs. Recall@5 asks: for each known duplicate, did its actual canonical issue appear anywhere in the five candidates the system retrieved? This evaluates retrieval separately from the LLM judge. If the correct canonical issue never enters the top five, the judge never gets a chance to identify it.
+## Current results
 
-| Arm | Retrieval method | Recall@5 |
-| --- | --- | ---: |
-| **A: raw text** | embed cleaned title + body, search all of `pile2` | **68.0%** (270/397) |
-| B: canonical | rewrite each issue as one bug sentence, then embed | 61.0% (242/397) |
-| C: clustering | search only inside the nearest k-means cluster | 55.9% (best k) |
-| D: canonical + clustering | both of the above | 46.6% (best k) |
+### Retrieval
 
-### Arm B: canonicalization
+| Metric | Result |
+|---|---:|
+| Embedding recall@1 | 195/397 (49.1%) |
+| Embedding recall@5 | 270/397 (68.0%) |
+| Embedding recall@20 | 320/397 (80.6%) |
+| Embedding recall@50 | 351/397 (88.4%) |
+| Adjusted recall@5 after removing 55 audited bad pairs | 270/342 (78.9%) |
 
-Before embedding, each issue was rewritten into a single sentence stating the underlying bug, on the theory that two reports of the same bug would collapse to nearly identical sentences. For example, two differently written reports could both become something like:
+BM25 was weaker overall:
 
-> Copilot Chat fails to return a response after the user submits a message.
+| Method | Recall@5 |
+|---|---:|
+| Embedding | 68.0% |
+| BM25 | 54.9% |
+| Symmetric RRF | 66.2% |
 
-The prompt explicitly told the model to discard code blocks, stack traces, error strings, version numbers, and OS. I think that instruction was the mistake: error strings are exactly what makes two reports of one bug recognizable, so the prompt threw away the signal it was supposed to preserve. Recall dropped 7 points, so this arm was never sent to `gpt-5.4-mini` to be judged.
+BM25 recovered all 26 manually identified lexical misses, but its unique contribution shrank as embedding depth increased. It is more useful as a targeted lexical source than as an equal partner in symmetric fusion.
 
-### Arm C: clustering
+### Multi-candidate judge
 
-Arm C used k-means clustering over all 4,036 embedding vectors, with the random seed fixed at 42. For each pile1 issue, the system searched only among pile2 issues in the same cluster.
+| Metric | k=20 | k=5 |
+|---|---:|---:|
+| Known duplicates with canonical retrieved | 82/100 | 67/100 |
+| Exact-correct canonical | 49/100 | 46/100 |
+| Correct among retrievable cases | 60% | 69% |
+| Wrong canonical selected | 28 | 23 |
+| Unlabeled controls flagged duplicate | 66/200 | 59/200 |
+| Near-empty issues flagged duplicate | 19/30 | 17/30 |
 
-| k | pairs in same cluster | Recall@5 |
-| ---: | ---: | ---: |
-| 20 | 61.2% | 49.6% |
-| 50 | 59.4% | 54.4% |
-| 100 | 57.2% | 53.4% |
-| 200 | 58.7% | **55.9%** |
-| 400 | 56.9% | 55.4% |
+The control flag rate is not yet a clean false-positive rate because an issue without the `*duplicate` label may still be a genuine unlabeled duplicate.
 
-Across the different values of k, only around 60% of true duplicate pairs landed in the same cluster at all. That means around 40% of the correct answers became impossible to retrieve before similarity ranking even started. Clustering introduces a hard ceiling on recall. An approximate nearest-neighbor index such as HNSW might avoid this, since it does not partition issues into disjoint clusters, so an issue can still be compared even when it sits on a cluster boundary. Partitioning the dataset into hard clusters removed too many valid candidates.
+## Main findings
 
-### Arm D: canonical + clustering
+### Retrieval is not the only bottleneck
 
-Arm D used the canonicalized vectors from Arm B inside the cluster-based retrieval from Arm C, combining the weaknesses of both: canonicalization removed useful technical details, and clustering made many true matches unreachable. The best Recall@5 was 46.6% at k = 100.
+Widening retrieval from five to twenty raises the number of available true canonicals, but the judge fails to use most of that extra ceiling. It often selects a plausible distractor instead.
 
-## What it produces
+### Top five is the current baseline
 
-| Pair | Confidence | Action | Why |
-| --- | ---: | --- | --- |
-| #313638 → #313639 | 0.999 | close as duplicate | identical title, body, version, commit hash |
-| #304056 → #304057 | 0.999 | close as duplicate | identical repro steps and symptom |
-| #294142 → #294141 | 0.999 | close as duplicate | identical body about inline suggestions covering code |
-| #325093 → #325086 | 0.99 | close as duplicate | same Python `input()` terminal bug |
+Top five is:
 
-The complete output is in `judged_armA.jsonl`, the model's verdict for all 4,000 candidate pairs. The filtered recommendations are in `candidates_filtered_armA.jsonl`, the 774 pairs that passed the confidence and document-quality filters.
+- one quarter the judging cost of top twenty
+- only three exact-correct decisions worse
+- more accurate among cases where the true canonical is available
+- less exposed to distractors
 
-### Human review
+A stronger reranker or judge may make deeper retrieval useful later.
 
-To evaluate the model's judgments, 40 pairs were manually reviewed and compared against the model's verdict. The sample was stratified by confidence:
+### The judge over-matches
 
-- 25 high-confidence pairs
-- 12 medium-confidence pairs
-- 3 low-confidence pairs
+The current judge frequently treats “related” as “same bug.” It also almost never abstains on near-empty issues.
 
-The labels are stored in `review_armA.jsonl`. All of the following numbers come from the current `*duplicate` run.
+Confidence is not a reliable filter in the multi-candidate setting. Correct and incorrect decisions receive similar confidence scores.
 
-| Band | Agreement |
-| --- | ---: |
-| high (≥ 0.8) | 23/25 = 92% |
-| medium (0.5–0.8) | 10/12 = 83% |
-| low (< 0.5) | 0/3 = 0% |
-| **overall** | **33/40 = 82.5%** |
+### Ground truth must be audited
 
-Agreement tracks confidence. When the model was sure it was almost always right, and when it was not sure it was wrong every single time. This suggests the confidence score is useful as a filtering signal.
+GitHub duplicate links are useful, but they do not always mean “same underlying bug.” Product evaluation must distinguish true same-bug pairs from broad maintainer relationships.
 
-**Every disagreement went the same direction.** The model said yes, the human said no. There were no cases in this sample where the human identified a duplicate that the model had rejected. The judge's main failure mode is therefore over-matching rather than missing duplicates.
+### Normalization removes useful evidence
 
-**The two high-confidence misses have the same shape:** one issue is detailed, the other is vague, and the model fills in what the vague one probably means. #5 (confidence 0.91) matched "REMOVE THIS PLEASE" against "STOP THE AI SUGGESTIONS PLEASE." Only one of them mentions AI. #20 (0.91) matched a real, specific bug against a bare template, matching on the detailed side alone. The model infers intent from the rich side and glosses over the underspecified one.
+About 8.5% of pile2 issues have five or fewer normalized body words. Some were genuinely sparse, but others lost stack traces or screenshots during preprocessing.
 
-**The rest are the familiar absence-of-evidence gap.** The entire low band (#7, #10, #36) is blank issue templates, and the model's own evidence field admits it: "effectively empty placeholders, no concrete evidence," correctly hedged at 0.08 to 0.14 confidence.
+## Current decision
 
-**The filter catches most of this.** 5 of the 7 disagreements involve a near-empty document and get dropped by `filter_candidates.py` before a human sees them, leaving only #5 and #20. On the pairs that actually ship, agreement is 92%. That is the number describing the product rather than the model, and it is close to the high-confidence-band result because the filtered output mostly contains that same type of pair.
+The current end-to-end baseline is:
 
-## Key decisions
+```text
+embedding top 5
+→ multi-candidate judge
+→ one recommendation or abstain
+```
 
-**Retrieve, then judge.** Embeddings are cheap and approximate, LLM calls are expensive and precise. Spend the cheap one on 2.6 million and the expensive one on 4,000.
+Do not widen retrieval, add a reranker, or tune confidence thresholds until the judge’s false-positive behavior is better understood.
 
-**Do not trust the label as ground truth.** GitHub's `*duplicate` often links issues with similar symptoms and different root causes. So the judge was asked the narrower question (same underlying bug), and a stratified sample was hand-labeled to see whether the model's answer matched a human's.
+## Next step
 
-**Fix the evaluation before running it.** The prompt and the 0.8 threshold were set before any results were seen and were not tuned afterward. The 92% high-band agreement is a result of that threshold, not a justification found for it later.
+Manually review 25 of the 59 category 1 issues flagged as duplicates at `k = 5`.
 
-**Measure retrieval separately from judgment.** Recall@5 isolates the retrieval stage. If the answer is not in the top five, the judge's accuracy is irrelevant.
+Label each as:
 
-## Limitations
+- genuine unlabeled duplicate
+- related but not the same bug
+- clear false positive
+- insufficient evidence
 
-- **The low band is directional, not solid.** Only three low-confidence pairs were available, so 0/3 shows a pattern but is not a reliable measurement. The high- and medium-confidence bands are more meaningful because they contain 25 and 12 examples.
-- **Ground truth is partial.** The 442 ground-truth pairs are a subset of real vscode duplicates, not all of them. Recall is measured against what could be recovered, not against truth.
-- **Normalization is repo-specific.** It is hand-tuned to the vscode issue template and will not transfer to another repo without rework.
-- **The pipeline is manual.** It runs as a sequence of manual script invocations.
-- **The judge over-matches.** It can match when one issue is detailed and the other is vague.
+This review will estimate the real false-positive rate and reveal which evidence patterns cause over-matching.
 
-## Next
+## Detailed documentation
 
-1. Push the judge toward abstaining when one side of a pair is underspecified, since that is where both high-confidence misses came from.
-2. Hybrid retrieval: combine embeddings with lexical matching on error strings. Arm B showed how important those details are by performing worse when they were removed.
-3. Support distinct matching modes: exact same bug versus same root cause.
+- [`docs/retrieval-experiments.md`](docs/retrieval-experiments.md)
+- [`docs/judge-evaluation.md`](docs/judge-evaluation.md)
+- [`docs/data-and-ground-truth.md`](docs/data-and-ground-truth.md)
