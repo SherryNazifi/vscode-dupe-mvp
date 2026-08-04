@@ -1,0 +1,19 @@
+330 judgeable issues (cat 1/3/4), 0 done, 330 to go
+  judged 20/330  (last: #327133 cat1 -> duplicate)
+  judged 40/330  (last: #328231 cat1 -> None)
+  judged 60/330  (last: #327990 cat1 -> duplicate)
+  judged 80/330  (last: #328189 cat1 -> None)
+  judged 100/330  (last: #327901 cat1 -> None)
+  judged 120/330  (last: #327929 cat1 -> duplicate)
+  judged 140/330  (last: #328019 cat1 -> None)
+  judged 160/330  (last: #327641 cat1 -> duplicate)
+  judged 180/330  (last: #328072 cat1 -> duplicate)
+  judged 200/330  (last: #328104 cat1 -> None)
+  judged 220/330  (last: #285802 cat3 -> duplicate)
+  judged 240/330  (last: #320080 cat3 -> None)
+  judged 260/330  (last: #287052 cat3 -> duplicate)
+  judged 280/330  (last: #288389 cat3 -> duplicate)
+  judged 300/330  (last: #297253 cat3 -> None)
+  judged 320/330  (last: #325188 cat4 -> None)
+
+Done this run: 330. Total in evaluation-top5.jsonl: 330
