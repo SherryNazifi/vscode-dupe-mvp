@@ -10,7 +10,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 TOKEN = os.environ["GITHUB_TOKEN"]
-OUTPUT = "ground_truth.jsonl"
+# Raw timeline pairs only. merge_ground_truth.py combines this with
+# matched_dupes.json to produce ground_truth.jsonl.
+OUTPUT = "timeline_pairs.jsonl"
 GRAPHQL_URL = "https://api.github.com/graphql"
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 

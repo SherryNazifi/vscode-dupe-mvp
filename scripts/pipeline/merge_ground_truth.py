@@ -7,12 +7,18 @@ _os.chdir(_os.path.join(_root, "data"))
 import json
 
 # Merge the two duplicate-link sources into one deduped ground_truth.jsonl:
-#   - ground_truth.jsonl : timeline pairs (from fetch_timeline.py) {issue, canonical}
-#   - matched_dupes.json : comment/body pairs (from find_dupe_refs.py) {issue, original}
+#   - timeline_pairs.jsonl : timeline pairs (from fetch_timeline.py) {issue, canonical}
+#   - matched_dupes.json   : comment/body pairs (from find_dupe_refs.py) {issue, original}
 # Dedup by UNORDERED pair so reverse-direction overlaps collapse. Timeline is
 # authoritative on direction when the two sources disagree (conflict flagged).
+#
+# Inputs are read-only; the output path is written only. Never merge into an
+# input — reading a previous ground_truth.jsonl back in re-labels comment pairs
+# as "timeline" and lets them win the direction tiebreak on every re-run.
 
-GT_FILE = "ground_truth.jsonl"
+TIMELINE_FILE = "timeline_pairs.jsonl"
+COMMENT_FILE = "matched_dupes.json"
+OUT_FILE = "ground_truth.jsonl"
 
 
 def load_jsonl(path):
@@ -25,8 +31,8 @@ def load_jsonl(path):
     return out
 
 
-timeline = load_jsonl(GT_FILE)                       # {issue, canonical, source:"timeline"}
-with open("matched_dupes.json") as f:
+timeline = load_jsonl(TIMELINE_FILE)                 # {issue, canonical, source:"timeline"}
+with open(COMMENT_FILE) as f:
     comments = json.load(f)                          # {issue, original, source:"comment"}
 
 # normalize to {issue(dup), canonical, source}
@@ -63,7 +69,7 @@ for r in records:
         winner["conflict"] = True
 
 out = sorted(merged.values(), key=lambda r: r["issue"], reverse=True)
-with open(GT_FILE, "w") as f:
+with open(OUT_FILE, "w") as f:
     for r in out:
         f.write(json.dumps(r) + "\n")
 

@@ -37,7 +37,8 @@ Recovered pairs: 427
 
 ### GitHub timeline events
 
-`fetch_timeline.py` retrieves GraphQL `MarkedAsDuplicateEvent` records.
+`fetch_timeline.py` retrieves GraphQL `MarkedAsDuplicateEvent` records and writes
+them to `timeline_pairs.jsonl`.
 
 Recovered pairs: 57
 
@@ -47,10 +48,15 @@ Timeline events are more structured and reliable than regex extraction from free
 
 `merge_ground_truth.py`:
 
-- combines both sources
+- reads `timeline_pairs.jsonl` + `matched_dupes.json`, writes `ground_truth.jsonl`
 - deduplicates by unordered issue pair
 - drops self-references
 - lets the timeline event determine direction when sources disagree
+
+Inputs and output are disjoint paths, so the merge is idempotent and re-runnable.
+Never point the output back at an input: reading a previous `ground_truth.jsonl`
+back in as the timeline source re-labels comment pairs as `timeline`, which then
+win the direction tiebreak on every subsequent run.
 
 Final result:
 
