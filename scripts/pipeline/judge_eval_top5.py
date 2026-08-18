@@ -8,7 +8,7 @@ while not _os.path.isdir(_os.path.join(_root, "data")) and _root != _os.path.dir
     _root = _os.path.dirname(_root)
 _os.chdir(_os.path.join(_root, "data"))
 
-import os, json, time
+import os, json, time, re
 from openai import OpenAI
 from openai import RateLimitError, APIError, APITimeoutError, APIConnectionError
 from dotenv import load_dotenv
@@ -93,6 +93,34 @@ def judge(issue_num, issue_doc, candidates):
             time.sleep(delay); delay = min(delay * 2, 120)
     raise RuntimeError(f"exceeded retry budget for issue {issue_num}")
 
+# --- pick resolution ---------------------------------------------------------
+# The model is asked for an issue NUMBER but occasionally returns the candidate's
+# RANK instead (e.g. picked_canonical: 14 meaning "rank 14"). Left unvalidated
+# that lands a bogus number in the output and scores a correct call as a miss.
+# Resolve against the actual candidate list, in order of trustworthiness:
+#   1. already a valid candidate number  -> use it
+#   2. a #number in the evidence text that IS a candidate -> use that
+#   3. a small int matching a rank        -> map rank to number
+# Anything else is dropped to None and counted, rather than passed through.
+def resolve_picked(raw, evidence, candidates):
+    numbers = {c["number"] for c in candidates}
+    by_rank = {c["rank"]: c["number"] for c in candidates}
+    try:
+        picked = int(raw) if raw not in (None, "", "None", "null") else None
+    except (ValueError, TypeError):
+        return None, "unparseable"
+    if picked is None:
+        return None, None
+    if picked in numbers:
+        return picked, None
+    for m in re.findall(r"#(\d+)", evidence or ""):
+        if int(m) in numbers:
+            return int(m), "recovered_from_evidence"
+    if picked in by_rank:
+        return by_rank[picked], "recovered_from_rank"
+    return None, "off_list_dropped"
+
+
 # --- resume ------------------------------------------------------------------
 def already_done(path):
     done = set()
@@ -111,17 +139,22 @@ todo = [r for r in tasks if (r["category"], r["number"]) not in done]
 print(f"{len(tasks)} judgeable issues (cat 1/3/4), {len(done)} done, {len(todo)} to go")
 
 processed = 0
+repairs = 0
 with open(OUT_FILE, "a") as out:
     for i, rec in enumerate(todo, 1):
         cat, num = rec["category"], rec["number"]
-        result = judge(num, query_doc(rec), rec["candidates"][:TOP_K])
+        shown = rec["candidates"][:TOP_K]
+        result = judge(num, query_doc(rec), shown)
 
         verdict = str(result.get("verdict", "")).strip()
-        picked = result.get("picked_canonical")
-        try:
-            picked = int(picked) if picked not in (None, "", "None", "null") else None
-        except (ValueError, TypeError):
-            picked = None
+        evidence = result.get("evidence")
+        # resolve against the TOP_K actually shown, not the full candidate list
+        picked, repair = resolve_picked(
+            result.get("picked_canonical"), evidence, shown)
+        if repair:
+            repairs += 1
+            print(f"    #{num}: picked_canonical "
+                  f"{result.get('picked_canonical')!r} -> {picked} ({repair})")
 
         record = {
             "issue": num,
@@ -130,8 +163,10 @@ with open(OUT_FILE, "a") as out:
             "verdict": verdict,
             "picked_canonical": picked,
             "confidence": result.get("confidence"),
-            "evidence": result.get("evidence"),
+            "evidence": evidence,
         }
+        if repair:
+            record["pick_repair"] = repair
         # ground-truth cross-check for category 3
         if cat == 3:
             truth = set(rec.get("true_canonical", []))
@@ -147,3 +182,5 @@ with open(OUT_FILE, "a") as out:
             print(f"  judged {processed}/{len(todo)}  (last: #{num} cat{cat} -> {verdict})")
 
 print(f"\nDone this run: {processed}. Total in {OUT_FILE}: {len(done) + processed}")
+if repairs:
+    print(f"Repaired {repairs} off-list picked_canonical value(s) — see pick_repair.")

@@ -105,8 +105,13 @@ for num, cr in cands.items():
         "human_notes": "",
     })
 
-# hardest first: judge most confident in a wrong answer
-rows.sort(key=lambda r: -(r["judge_confidence"] or 0))
+# Group by failure mode so the review is one kind of judgment at a time:
+# picked_distractor first (there is a wrong pick to compare against the truth),
+# picked_none last (nothing was picked, so only the abstention is in question).
+# Within each group, most confident first.
+MODE_ORDER = {"picked_distractor": 0, "picked_none": 1}
+rows.sort(key=lambda r: (MODE_ORDER[r["failure_mode"]],
+                         -(r["judge_confidence"] or 0)))
 
 with open(OUT_FILE, "w") as f:
     for r in rows:
