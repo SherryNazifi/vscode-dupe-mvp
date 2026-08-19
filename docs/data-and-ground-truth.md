@@ -134,10 +134,12 @@ Absence of the label does not prove an issue has no duplicate. When the judge fl
 This is why the top-five control flag rate:
 
 ```text
-59/200 = 29.5%
+58/200 = 29.0%
 ```
 
-is an upper bound rather than a final false-positive estimate.
+is an upper bound rather than a final false-positive estimate. Twenty-three of those
+flags have since been reviewed; 6 were genuine duplicates, confirming the count is not a
+false-positive count. See [`results.md`](results.md#category-1-controls-reviewed-sample).
 
 ## Data quality limitations
 
