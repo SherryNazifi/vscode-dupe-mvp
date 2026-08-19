@@ -43,6 +43,17 @@ docs.update(load_docs(CAND_DOCS))
 cands = {r["number"]: r for r in load_jsonl(CANDIDATES) if r["category"] == 3}
 judged = {r["issue"]: r for r in load_jsonl(JUDGED) if r["category"] == 3}
 
+# Hand-entered review labels are the one thing here that cannot be regenerated,
+# so carry them over from an existing output instead of blanking them. Keyed by
+# issue number, which is stable across regenerations.
+REVIEW_FIELDS = ("human_verdict", "human_notes")
+prior = {}
+if _os.path.exists(OUT_FILE):
+    for r in load_jsonl(OUT_FILE):
+        kept = {k: r.get(k, "") for k in REVIEW_FIELDS if str(r.get(k, "")).strip()}
+        if kept:
+            prior[r["issue"]] = kept
+
 
 def title_of(num):
     return (docs.get(num) or {}).get("title", "")
@@ -100,10 +111,11 @@ for num, cr in cands.items():
         "true_canonical_score": tc_score,
         "judge_confidence": jr.get("confidence"),
         "judge_evidence": jr.get("evidence"),
-        # <-- you fill these in
+        # <-- you fill these in; preserved across re-runs
         "human_verdict": "",
         "human_notes": "",
     })
+    rows[-1].update(prior.get(num, {}))
 
 # Group by failure mode so the review is one kind of judgment at a time:
 # picked_distractor first (there is a wrong pick to compare against the truth),
@@ -122,4 +134,14 @@ modes = Counter(r["failure_mode"] for r in rows)
 print(f"Category 3 judge failures (true canonical was retrieved): {len(rows)}")
 for m, n in modes.most_common():
     print(f"  {m}: {n}")
+
+if prior:
+    carried = sum(1 for r in rows if r["issue"] in prior)
+    print(f"Carried over {carried} existing review label(s).")
+    # A row that dropped out of the set takes its label with it — say so loudly
+    # rather than losing hand-entered work silently.
+    orphaned = sorted(set(prior) - {r["issue"] for r in rows})
+    if orphaned:
+        print(f"WARNING: {len(orphaned)} labelled issue(s) no longer in the set, "
+              f"labels dropped: {orphaned}")
 print(f"-> {OUT_FILE}  (fill \"human_verdict\" and \"human_notes\" on each line)")
